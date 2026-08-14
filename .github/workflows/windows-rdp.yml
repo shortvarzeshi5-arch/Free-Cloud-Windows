@@ -1,0 +1,48 @@
+name: Windows Cloud RDP
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: 1. Download Ngrok Agent
+        run: |
+          Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
+          Expand-Archive ngrok.zip -Force
+
+      - name: 2. Authenticate Ngrok
+        run: .\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
+        env:
+          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+
+      - name: 3. Enable RDP & Firewall Rules
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
+
+      - name: 4. Create Windows Administrator Account
+        run: |
+          net user CynetAdmin CynetMaster2026! /add
+          net localgroup administrators CynetAdmin /add
+
+      - name: 5. Start Tunneling Port 3389
+        run: |
+          Start-Process powershell -ArgumentList '-NoExit', '-Command', '.\ngrok.exe tcp --region ap 3389'
+
+      - name: 6. Keep Server Alive (Up to 6 Hours)
+        run: |
+          Write-Host "=========================================="
+          Write-Host "  RDP Server is LIVE and ready to connect!"
+          Write-Host "  Check Ngrok Endpoints for IP & Port."
+          Write-Host "=========================================="
+          $i = 0
+          while ($i -lt 360) {
+            Start-Sleep -Seconds 60
+            $i++
+            Write-Host "Server running... $i minutes elapsed."
+          }
