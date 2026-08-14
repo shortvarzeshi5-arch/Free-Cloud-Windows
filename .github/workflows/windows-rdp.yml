@@ -15,41 +15,48 @@ jobs:
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
 
-      - name: 2. Create Windows Administrator Account
+      - name: 2. Create Admin Account
         run: |
           $Password = ConvertTo-SecureString "Cynet@2026" -AsPlainText -Force
           New-LocalUser -Name "CynetAdmin" -Password $Password -PasswordNeverExpires -ErrorAction SilentlyContinue
           Add-LocalGroupMember -Group "Administrators" -Member "CynetAdmin" -ErrorAction SilentlyContinue
           net user runneradmin Cynet@2026
 
-      - name: 3. Start Secure Tunnel (Port 443) & Get RDP Address
+      - name: 3. Start Tunnel via Serveo & Print Address
         run: |
-          # Start SSH tunnel via Pinggy on port 443
-          Start-Process -FilePath "ssh" -ArgumentList "-p 443 -R0:localhost:3389 -o StrictHostKeyChecking=no -o ServerAliveInterval=15 a.pinggy.io" -RedirectStandardOutput C:\pinggy.log -RedirectStandardError C:\pinggy_err.log
+          # Start Serveo TCP tunnel - no install, no signup, no credit card needed!
+          Start-Process ssh -ArgumentList "-o StrictHostKeyChecking=no -o ServerAliveInterval=30 -R 0:localhost:3389 serveo.net" `
+            -RedirectStandardOutput C:\serveo.log `
+            -RedirectStandardError C:\serveo_err.log
           
-          Start-Sleep -Seconds 8
+          # Wait for tunnel to establish
+          Start-Sleep -Seconds 10
           
-          $log = Get-Content C:\pinggy.log -Raw -ErrorAction SilentlyContinue
-          if ($log -match 'tcp://([a-zA-Z0-9\.\-]+:[0-9]+)') {
-              $rdp_address = $matches[1]
-              
+          # Read from both stdout and stderr
+          $out = Get-Content C:\serveo.log -Raw -ErrorAction SilentlyContinue
+          $err = Get-Content C:\serveo_err.log -Raw -ErrorAction SilentlyContinue
+          $combined = "$out $err"
+          
+          Write-Host "--- Raw Output ---"
+          Write-Host $combined
+          
+          # Extract port number from serveo output
+          if ($combined -match 'serveo.net:(\d+)') {
+              $port = $matches[1]
               Write-Host ""
               Write-Host "==================================================" -ForegroundColor Green
-              Write-Host "  >>> RDP SERVER IS READY TO CONNECT! <<<" -ForegroundColor Cyan
-              Write-Host "  Address  : $rdp_address" -ForegroundColor Yellow
-              Write-Host "  Username : CynetAdmin" -ForegroundColor Yellow
-              Write-Host "  Password : Cynet@2026" -ForegroundColor Yellow
+              Write-Host "   >>> RDP SERVER IS READY! <<<" -ForegroundColor Cyan
+              Write-Host "   Address  : serveo.net:$port" -ForegroundColor Yellow
+              Write-Host "   Username : CynetAdmin" -ForegroundColor Yellow
+              Write-Host "   Password : Cynet@2026" -ForegroundColor Yellow
               Write-Host "==================================================" -ForegroundColor Green
-              Write-Host ""
           } else {
-              Write-Host "--- TUNNEL OUTPUT ---" -ForegroundColor Yellow
-              Write-Host $log
-              Get-Content C:\pinggy_err.log -Raw -ErrorAction SilentlyContinue
+              Write-Host "Tunnel output not matched yet. Check raw output above." -ForegroundColor Red
           }
 
       - name: 4. Keep Server Alive (6 Hours)
         run: |
           for ($i = 1; $i -le 360; $i++) {
             Start-Sleep -Seconds 60
-            Write-Host "Server is active... [$i / 360 minutes]"
+            Write-Host "[$i/360] Server running..."
           }
