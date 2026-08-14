@@ -9,53 +9,54 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: 1. Install Ngrok to System Path
+      - name: 1. Install Ngrok
         run: |
           Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile C:\Windows\ngrok.zip
           Expand-Archive C:\Windows\ngrok.zip -DestinationPath C:\Windows -Force
           Remove-Item C:\Windows\ngrok.zip
 
-      - name: 2. Authenticate Ngrok
-        run: ngrok config add-authtoken $Env:NGROK_AUTH_TOKEN
-        env:
-          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
-
-      - name: 3. Enable Remote Desktop & Firewall
+      - name: 2. Enable Remote Desktop & Firewall
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
 
-      - name: 4. Create Windows Administrator Account
+      - name: 3. Create Windows Administrator Account
         run: |
           $Password = ConvertTo-SecureString "Cynet@2026" -AsPlainText -Force
           New-LocalUser -Name "CynetAdmin" -Password $Password -PasswordNeverExpires -ErrorAction SilentlyContinue
           Add-LocalGroupMember -Group "Administrators" -Member "CynetAdmin" -ErrorAction SilentlyContinue
           net user runneradmin Cynet@2026
 
-      - name: 5. Start Ngrok Tunnel
+      - name: 4. Start Ngrok Tunnel & Get URL
+        env:
+          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
         run: |
-          Start-Process ngrok -ArgumentList 'tcp 3389'
-
-      - name: 6. Get Connection Info & Keep Alive
-        run: |
-          Start-Sleep -Seconds 7
-          try {
-            $response = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels"
-            $raw_url = $response.tunnels[0].public_url
-            $clean_ip = $raw_url.Replace("tcp://", "")
-            
-            Write-Host "==================================================" -ForegroundColor Green
-            Write-Host "  >>> RDP SERVER IS READY! <<<" -ForegroundColor Cyan
-            Write-Host "  Address  : $clean_ip" -ForegroundColor Yellow
-            Write-Host "  Username : CynetAdmin" -ForegroundColor Yellow
-            Write-Host "  Password : Cynet@2026" -ForegroundColor Yellow
-            Write-Host "==================================================" -ForegroundColor Green
-          } catch {
-            Write-Host "Please check your Ngrok Dashboard for IP/Port: https://dashboard.ngrok.com/endpoints/status" -ForegroundColor Red
+          # Start Ngrok with direct authtoken and logging
+          Start-Process ngrok -ArgumentList "tcp 3389 --authtoken $Env:NGROK_AUTH_TOKEN --log=stdout" -RedirectStandardOutput C:\ngrok.log -RedirectStandardError C:\ngrok_err.log
+          
+          Start-Sleep -Seconds 8
+          
+          $log = Get-Content C:\ngrok.log -Raw -ErrorAction SilentlyContinue
+          if ($log -match 'url=tcp://([^\s]+)') {
+              $rdp_address = $matches[1]
+              Write-Host ""
+              Write-Host "==================================================" -ForegroundColor Green
+              Write-Host "  >>> RDP SERVER IS READY! <<<" -ForegroundColor Cyan
+              Write-Host "  Address  : $rdp_address" -ForegroundColor Yellow
+              Write-Host "  Username : CynetAdmin" -ForegroundColor Yellow
+              Write-Host "  Password : Cynet@2026" -ForegroundColor Yellow
+              Write-Host "==================================================" -ForegroundColor Green
+              Write-Host ""
+          } else {
+              Write-Host "--- NGROK LOG OUTPUT ---" -ForegroundColor Yellow
+              Write-Host $log
+              Write-Host "--- ERROR LOG ---" -ForegroundColor Red
+              Get-Content C:\ngrok_err.log -Raw -ErrorAction SilentlyContinue
           }
 
-          # Keep server running for up to 6 hours
+      - name: 5. Keep Server Alive (6 Hours)
+        run: |
           for ($i = 1; $i -le 360; $i++) {
             Start-Sleep -Seconds 60
             Write-Host "Server is active... [$i / 360 minutes]"
