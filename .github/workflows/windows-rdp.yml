@@ -9,11 +9,11 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: 1. Install Ngrok
+      - name: 1. Install Bore Tunnel
         run: |
-          Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile C:\Windows\ngrok.zip
-          Expand-Archive C:\Windows\ngrok.zip -DestinationPath C:\Windows -Force
-          Remove-Item C:\Windows\ngrok.zip
+          Invoke-WebRequest https://github.com/ekzhang/bore/releases/download/v0.5.1/bore-v0.5.1-x86_64-pc-windows-msvc.zip -OutFile C:\bore.zip
+          Expand-Archive C:\bore.zip -DestinationPath C:\Windows -Force
+          Remove-Item C:\bore.zip
 
       - name: 2. Enable Remote Desktop & Firewall
         run: |
@@ -28,31 +28,30 @@ jobs:
           Add-LocalGroupMember -Group "Administrators" -Member "CynetAdmin" -ErrorAction SilentlyContinue
           net user runneradmin Cynet@2026
 
-      - name: 4. Start Ngrok Tunnel & Get URL
-        env:
-          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+      - name: 4. Start Tunnel & Get RDP Address
         run: |
-          # Start Ngrok with direct authtoken and logging
-          Start-Process ngrok -ArgumentList "tcp 3389 --authtoken $Env:NGROK_AUTH_TOKEN --log=stdout" -RedirectStandardOutput C:\ngrok.log -RedirectStandardError C:\ngrok_err.log
+          Start-Process bore -ArgumentList "local 3389 --to bore.pub" -RedirectStandardOutput C:\bore.log -RedirectStandardError C:\bore_err.log
           
-          Start-Sleep -Seconds 8
+          Start-Sleep -Seconds 6
           
-          $log = Get-Content C:\ngrok.log -Raw -ErrorAction SilentlyContinue
-          if ($log -match 'url=tcp://([^\s]+)') {
-              $rdp_address = $matches[1]
+          $log = Get-Content C:\bore.log -Raw -ErrorAction SilentlyContinue
+          if ($log -match 'bore.pub:([0-9]+)') {
+              $port = $matches[1]
+              $rdp_address = "bore.pub:$port"
+              
               Write-Host ""
               Write-Host "==================================================" -ForegroundColor Green
-              Write-Host "  >>> RDP SERVER IS READY! <<<" -ForegroundColor Cyan
+              Write-Host "  >>> RDP SERVER IS LIVE & READY! <<<" -ForegroundColor Cyan
               Write-Host "  Address  : $rdp_address" -ForegroundColor Yellow
               Write-Host "  Username : CynetAdmin" -ForegroundColor Yellow
               Write-Host "  Password : Cynet@2026" -ForegroundColor Yellow
               Write-Host "==================================================" -ForegroundColor Green
               Write-Host ""
           } else {
-              Write-Host "--- NGROK LOG OUTPUT ---" -ForegroundColor Yellow
+              Write-Host "--- BORE LOG ---" -ForegroundColor Yellow
               Write-Host $log
               Write-Host "--- ERROR LOG ---" -ForegroundColor Red
-              Get-Content C:\ngrok_err.log -Raw -ErrorAction SilentlyContinue
+              Get-Content C:\bore_err.log -Raw -ErrorAction SilentlyContinue
           }
 
       - name: 5. Keep Server Alive (6 Hours)
