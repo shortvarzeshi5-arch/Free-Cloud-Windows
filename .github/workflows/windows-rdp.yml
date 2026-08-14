@@ -9,52 +9,45 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: 1. Install Bore Tunnel
-        run: |
-          Invoke-WebRequest https://github.com/ekzhang/bore/releases/download/v0.5.1/bore-v0.5.1-x86_64-pc-windows-msvc.zip -OutFile C:\bore.zip
-          Expand-Archive C:\bore.zip -DestinationPath C:\Windows -Force
-          Remove-Item C:\bore.zip
-
-      - name: 2. Enable Remote Desktop & Firewall
+      - name: 1. Enable Remote Desktop & Firewall
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
 
-      - name: 3. Create Windows Administrator Account
+      - name: 2. Create Windows Administrator Account
         run: |
           $Password = ConvertTo-SecureString "Cynet@2026" -AsPlainText -Force
           New-LocalUser -Name "CynetAdmin" -Password $Password -PasswordNeverExpires -ErrorAction SilentlyContinue
           Add-LocalGroupMember -Group "Administrators" -Member "CynetAdmin" -ErrorAction SilentlyContinue
           net user runneradmin Cynet@2026
 
-      - name: 4. Start Tunnel & Get RDP Address
+      - name: 3. Start Secure Tunnel (Port 443) & Get RDP Address
         run: |
-          Start-Process bore -ArgumentList "local 3389 --to bore.pub" -RedirectStandardOutput C:\bore.log -RedirectStandardError C:\bore_err.log
+          # Start SSH tunnel via Pinggy on port 443
+          Start-Process -FilePath "ssh" -ArgumentList "-p 443 -R0:localhost:3389 -o StrictHostKeyChecking=no -o ServerAliveInterval=15 a.pinggy.io" -RedirectStandardOutput C:\pinggy.log -RedirectStandardError C:\pinggy_err.log
           
-          Start-Sleep -Seconds 6
+          Start-Sleep -Seconds 8
           
-          $log = Get-Content C:\bore.log -Raw -ErrorAction SilentlyContinue
-          if ($log -match 'bore.pub:([0-9]+)') {
-              $port = $matches[1]
-              $rdp_address = "bore.pub:$port"
+          $log = Get-Content C:\pinggy.log -Raw -ErrorAction SilentlyContinue
+          if ($log -match 'tcp://([a-zA-Z0-9\.\-]+:[0-9]+)') {
+              $rdp_address = $matches[1]
               
               Write-Host ""
               Write-Host "==================================================" -ForegroundColor Green
-              Write-Host "  >>> RDP SERVER IS LIVE & READY! <<<" -ForegroundColor Cyan
+              Write-Host "  >>> RDP SERVER IS READY TO CONNECT! <<<" -ForegroundColor Cyan
               Write-Host "  Address  : $rdp_address" -ForegroundColor Yellow
               Write-Host "  Username : CynetAdmin" -ForegroundColor Yellow
               Write-Host "  Password : Cynet@2026" -ForegroundColor Yellow
               Write-Host "==================================================" -ForegroundColor Green
               Write-Host ""
           } else {
-              Write-Host "--- BORE LOG ---" -ForegroundColor Yellow
+              Write-Host "--- TUNNEL OUTPUT ---" -ForegroundColor Yellow
               Write-Host $log
-              Write-Host "--- ERROR LOG ---" -ForegroundColor Red
-              Get-Content C:\bore_err.log -Raw -ErrorAction SilentlyContinue
+              Get-Content C:\pinggy_err.log -Raw -ErrorAction SilentlyContinue
           }
 
-      - name: 5. Keep Server Alive (6 Hours)
+      - name: 4. Keep Server Alive (6 Hours)
         run: |
           for ($i = 1; $i -le 360; $i++) {
             Start-Sleep -Seconds 60
