@@ -9,17 +9,18 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      - name: 1. Download Ngrok Agent
+      - name: 1. Install Ngrok to System Path
         run: |
-          Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
-          Expand-Archive ngrok.zip -Force
+          Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile C:\Windows\ngrok.zip
+          Expand-Archive C:\Windows\ngrok.zip -DestinationPath C:\Windows -Force
+          Remove-Item C:\Windows\ngrok.zip
 
       - name: 2. Authenticate Ngrok
-        run: .\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
+        run: ngrok config add-authtoken $Env:NGROK_AUTH_TOKEN
         env:
           NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
 
-      - name: 3. Enable RDP & Firewall Rules
+      - name: 3. Enable Remote Desktop & Firewall
         run: |
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
@@ -30,19 +31,30 @@ jobs:
           net user CynetAdmin CynetMaster2026! /add
           net localgroup administrators CynetAdmin /add
 
-      - name: 5. Start Tunneling Port 3389
+      - name: 5. Start Ngrok Tunnel
         run: |
-          Start-Process powershell -ArgumentList '-NoExit', '-Command', '.\ngrok.exe tcp --region ap 3389'
+          Start-Process ngrok -ArgumentList 'tcp 3389'
 
-      - name: 6. Keep Server Alive (Up to 6 Hours)
+      - name: 6. Get Connection Info & Keep Alive
         run: |
-          Write-Host "=========================================="
-          Write-Host "  RDP Server is LIVE and ready to connect!"
-          Write-Host "  Check Ngrok Endpoints for IP & Port."
-          Write-Host "=========================================="
-          $i = 0
-          while ($i -lt 360) {
+          Start-Sleep -Seconds 5
+          try {
+            $response = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels"
+            $raw_url = $response.tunnels[0].public_url
+            $clean_ip = $raw_url.Replace("tcp://", "")
+            
+            Write-Host "==================================================" -ForegroundColor Green
+            Write-Host "  >>> RDP SERVER IS READY! <<<" -ForegroundColor Cyan
+            Write-Host "  Address  : $clean_ip" -ForegroundColor Yellow
+            Write-Host "  Username : CynetAdmin" -ForegroundColor Yellow
+            Write-Host "  Password : CynetMaster2026!" -ForegroundColor Yellow
+            Write-Host "==================================================" -ForegroundColor Green
+          } catch {
+            Write-Host "Please check your Ngrok Dashboard for IP/Port." -ForegroundColor Red
+          }
+
+          # Keep server running for up to 6 hours
+          for ($i = 1; $i -le 360; $i++) {
             Start-Sleep -Seconds 60
-            $i++
-            Write-Host "Server running... $i minutes elapsed."
+            Write-Host "Server is active... [$i / 360 minutes]"
           }
