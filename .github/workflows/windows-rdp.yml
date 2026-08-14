@@ -28,8 +28,10 @@ jobs:
 
       - name: 4. Create Windows Administrator Account
         run: |
-          net user CynetAdmin CynetMaster2026! /add
-          net localgroup administrators CynetAdmin /add
+          $Password = ConvertTo-SecureString "Cynet@2026" -AsPlainText -Force
+          New-LocalUser -Name "CynetAdmin" -Password $Password -PasswordNeverExpires -ErrorAction SilentlyContinue
+          Add-LocalGroupMember -Group "Administrators" -Member "CynetAdmin" -ErrorAction SilentlyContinue
+          net user runneradmin Cynet@2026
 
       - name: 5. Start Ngrok Tunnel
         run: |
@@ -37,7 +39,7 @@ jobs:
 
       - name: 6. Get Connection Info & Keep Alive
         run: |
-          Start-Sleep -Seconds 5
+          Start-Sleep -Seconds 7
           try {
             $response = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels"
             $raw_url = $response.tunnels[0].public_url
@@ -47,10 +49,10 @@ jobs:
             Write-Host "  >>> RDP SERVER IS READY! <<<" -ForegroundColor Cyan
             Write-Host "  Address  : $clean_ip" -ForegroundColor Yellow
             Write-Host "  Username : CynetAdmin" -ForegroundColor Yellow
-            Write-Host "  Password : CynetMaster2026!" -ForegroundColor Yellow
+            Write-Host "  Password : Cynet@2026" -ForegroundColor Yellow
             Write-Host "==================================================" -ForegroundColor Green
           } catch {
-            Write-Host "Please check your Ngrok Dashboard for IP/Port." -ForegroundColor Red
+            Write-Host "Please check your Ngrok Dashboard for IP/Port: https://dashboard.ngrok.com/endpoints/status" -ForegroundColor Red
           }
 
           # Keep server running for up to 6 hours
